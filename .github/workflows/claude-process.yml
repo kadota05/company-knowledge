@@ -1,0 +1,39 @@
+name: Claude Knowledge Processor
+
+# Step 2: PRが作成されたらClaude Codeが処理
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  process:
+    if: startsWith(github.head_ref, 'knowledge/auto-')
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Process with Claude Code
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            あなたはチームナレッジ管理AIです。
+            CLAUDE.mdのルールに従って以下の処理を行ってください。
+
+            ## 指示
+            1. CLAUDE.mdを読んでナレッジ管理のルールを確認してください
+            2. source/ディレクトリ内のファイルを確認し、.gitkeep以外のファイルを読んでください
+            3. 既存のナレッジファイル（company/, best-practices/, skills/）を確認し、関連や重複がないか調べてください
+            4. 各ファイルの内容を理解し、適切なディレクトリに配置・統合してください
+            5. 処理が完了したらsource/内の処理済みファイルを削除してください
+            6. source/.gitkeepは絶対に削除しないでください
+            7. 変更をコミットしてこのPRのブランチにpushしてください
