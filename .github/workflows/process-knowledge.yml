@@ -1,6 +1,5 @@
 name: Process Knowledge
 
-# Step 1: source/へのpushでPRを自動作成
 on:
   push:
     paths:
@@ -10,7 +9,7 @@ on:
       - main
 
 jobs:
-  create-pr:
+  process-knowledge:
     runs-on: ubuntu-latest
     if: github.actor != 'github-actions[bot]'
 
@@ -41,25 +40,72 @@ jobs:
         if: steps.changed.outputs.no_files == 'true'
         run: echo "No source files to process. Skipping."
 
-      - name: Create processing branch and PR
+      - name: Create processing branch
         if: steps.changed.outputs.no_files == 'false'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        id: branch
         run: |
           BRANCH="knowledge/auto-$(date +%Y%m%d-%H%M%S)"
+          echo "name=$BRANCH" >> $GITHUB_OUTPUT
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
 
-          # 空コミットでPRを作成（Claude Codeが実際の処理を行う）
-          git commit --allow-empty -m "trigger: knowledge processing request"
-          git push origin "$BRANCH"
+      - name: Install Claude Code
+        if: steps.changed.outputs.no_files == 'false'
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Process knowledge with Claude Code
+        if: steps.changed.outputs.no_files == 'false'
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          claude -p "
+          あなたはチームナレッジ管理AIです。
+          CLAUDE.mdのルールに従って以下の処理を行ってください。
+
+          ## 処理対象
+          source/ディレクトリに以下のファイルが追加されました：
+          ${{ steps.changed.outputs.files }}
+
+          ## 指示
+          1. CLAUDE.mdを読んでナレッジ管理のルールを確認してください
+          2. source/内の対象ファイルを読んでください
+          3. 既存のナレッジファイル（company/, best-practices/, skills/）を確認し、関連や重複がないか調べてください
+          4. 各ファイルの内容を理解し、適切なディレクトリに配置・統合してください
+          5. 処理が完了したらsource/内の処理済みファイルを削除してください（.gitkeepは残す）
+          "
+
+      - name: Create PR with changes
+        if: steps.changed.outputs.no_files == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git add -A
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "auto: process knowledge from source/
+
+          Processed files: ${{ steps.changed.outputs.files }}
+
+          Co-Authored-By: Claude <noreply@anthropic.com>"
+
+          git push origin "${{ steps.branch.outputs.name }}"
 
           gh pr create \
             --base main \
-            --head "$BRANCH" \
-            --title "ナレッジ処理リクエスト $(date +%Y-%m-%d)" \
-            --body "## 処理対象ファイル
+            --head "${{ steps.branch.outputs.name }}" \
+            --title "auto: ナレッジ自動処理 $(date +%Y-%m-%d)" \
+            --body "## 自動処理されたナレッジ
+
+          ### 処理元ファイル
           ${{ steps.changed.outputs.files }}
 
-          Claude Codeがsource/内のファイルを解析し、適切なディレクトリに配置します。"
+          ### 処理内容
+          source/に投入されたファイルをClaude Codeが自動で解析し、
+          適切なディレクトリに配置・統合しました。
+
+          CODEOWNERSに基づくレビュー承認後にマージしてください。"
