@@ -1,0 +1,120 @@
+name: Process Knowledge
+
+on:
+  push:
+    paths:
+      - 'source/**'
+      - '!source/.gitkeep'
+    branches:
+      - main
+
+jobs:
+  process-knowledge:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files in source/
+        id: changed
+        run: |
+          FILES=$(git diff --name-only HEAD~1 HEAD -- 'source/' | grep -v '.gitkeep' || true)
+          if [ -z "$FILES" ]; then
+            echo "no_files=true" >> $GITHUB_OUTPUT
+          else
+            echo "no_files=false" >> $GITHUB_OUTPUT
+            echo "files<<EOF" >> $GITHUB_OUTPUT
+            echo "$FILES" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Skip if no source files
+        if: steps.changed.outputs.no_files == 'true'
+        run: echo "No source files to process. Skipping."
+
+      - name: Install Claude Code
+        if: steps.changed.outputs.no_files == 'false'
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Process knowledge with Claude Code
+        if: steps.changed.outputs.no_files == 'false'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # 処理対象ファイルの内容を収集
+          CONTENT=""
+          for file in ${{ steps.changed.outputs.files }}; do
+            if [ -f "$file" ]; then
+              CONTENT="$CONTENT\n\n--- $file ---\n$(cat "$file")"
+            fi
+          done
+
+          # Claude Codeに処理を依頼
+          claude -p "
+          あなたはチームナレッジ管理AIです。
+          CLAUDE.mdのルールに従って以下の処理を行ってください。
+
+          ## 処理対象
+          source/ディレクトリに以下のファイルが追加されました：
+          ${{ steps.changed.outputs.files }}
+
+          内容：
+          $CONTENT
+
+          ## 指示
+          1. CLAUDE.mdを読んでナレッジ管理のルールを確認してください
+          2. 各ファイルの内容を理解し、適切なディレクトリに配置・統合してください
+          3. 既存ファイルとの重複や関連を確認してください
+          4. 処理が完了したらsource/内の処理済みファイルを削除してください
+          5. 変更をコミットしてください（直接mainブランチに。PRは不要）
+
+          重要：source/.gitkeepは削除しないでください。
+          "
+
+      - name: Create PR with changes
+        if: steps.changed.outputs.no_files == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="knowledge/auto-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH"
+          git add -A
+
+          # 変更があるかチェック
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "auto: process knowledge from source/
+
+          Processed files: ${{ steps.changed.outputs.files }}
+
+          Co-Authored-By: Claude <noreply@anthropic.com>"
+
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "auto: ナレッジ自動処理 $(date +%Y-%m-%d)" \
+            --body "## 自動処理されたナレッジ
+
+          ### 処理元ファイル
+          ${{ steps.changed.outputs.files }}
+
+          ### 処理内容
+          source/に投入されたファイルをClaude Codeが自動で解析し、
+          適切なディレクトリに配置・統合しました。
+
+          CODEOWNERSに基づくレビュー承認後にマージしてください。"
