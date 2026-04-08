@@ -4,4 +4,4 @@
 
 | チーム/プロジェクト | リポジトリ | 概要 |
 |---------------------|-----------|------|
-| AIチーム | kadota05/ai-team | AIチームのナレッジ共有 |
+| AIチーム | [kadota05/ai-team](https://github.com/kadota05/ai-team) | AIチームのナレッジ共有 |
