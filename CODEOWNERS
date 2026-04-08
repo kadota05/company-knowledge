@@ -1,17 +1,14 @@
-# チームナレッジ リポジトリ CODEOWNERS
+# company-knowledge CODEOWNERS
 # ブランチ保護と組み合わせて、承認必須の領域を定義する
 
 # 全社共通ナレッジ → 管理者が承認
 /company/                @kadota05
 
-# 承認済みスキル → 管理者が承認
-/skills/approved/        @kadota05
+# Claude活用（スキル・ベストプラクティス） → 管理者が承認
+/claude/                 @kadota05
 
-# スキル提案 → 管理者が承認
-/skills/proposals/       @kadota05
-
-# ベストプラクティス → 管理者が承認
-/best-practices/         @kadota05
+# 専用リポジトリ一覧 → 管理者が承認
+/repos/                  @kadota05
 
 # リポジトリ設定 → 管理者が承認
 /CLAUDE.md               @kadota05
